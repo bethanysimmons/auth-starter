@@ -5,14 +5,22 @@ const nunjucks = require('nunjucks');
 const app = express();
 const port = process.env.PORT || 3000
 
-// configure pg
-const pg = require('pg')
-const client = new pg.Client({
-    connectionString: process.env.CONNECTION_STRING
-})
+// Database client
+const client = require('./db/index.js')
 
-// Connect
-client.connect()
+const { auth, requiresAuth } = require('express-openid-connect');
+const config = {
+    authRequired: false,
+    auth0Logout: true,
+    secret: process.env.AUTH0_SECRET,
+    baseURL: process.env.SITE_URL || 'http://localhost:3000',
+    clientID: process.env.AUTH0_CLIENT_ID,
+    issuerBaseURL: 'https://bdaley.auth0.com'
+};
+
+// auth router attaches /login, /logout, and /callback routes to the baseURL
+app.use(auth(config));
+
 
 // Configure Nunjucks
 nunjucks.configure('views', {
@@ -21,19 +29,22 @@ nunjucks.configure('views', {
     express: app
 });
 
+// Anyone can view this page!
 app.get('/', async (req, res) => {
 
-    let query = req.query.q
-    let results = []
-
-    if(query !== undefined) {
-        query = query.toLowerCase()
-        let likeQuery = `%${query}%`
-        results = await client.query("select * from track where LOWER(name) LIKE $1", [likeQuery])
-    }
+    let isAuthenticated = req.oidc.isAuthenticated();
 
     // Render index.njk using the variable "title" 
-    res.render('search.njk', { title: "Search", query: query, rows: results.rows});
+   res.render('index.njk', { title: "Public Page", isAuthenticated });
+})
+
+
+// Only authenticated users can view this page!
+app.get('/profile', requiresAuth(), (req, res) => {
+    console.log(req.oidc.user)
+
+    res.render('profile.njk', { title: "Your Profile", user: req.oidc.user });
+
 })
 
 
